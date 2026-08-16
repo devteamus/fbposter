@@ -98,7 +98,7 @@ export default function JobsPage() {
             <label className="text-sm font-medium">CSV file</label>
             <input name="csv" type="file" accept=".csv" required
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-primary file:px-2 file:py-1 file:text-xs file:text-primary-foreground" />
-            <p className="text-xs text-muted-foreground">Columns required: caption, media_url. Optional: post_type (image/video)</p>
+            <p className="text-xs text-muted-foreground">Columns required: caption, media_url. Optional: post_type (image/video), comment (auto-posted as a comment after the post goes live)</p>
           </div>
           <div className="flex gap-3 pt-2">
             <button type="submit" disabled={uploading} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
@@ -173,6 +173,15 @@ export default function JobsPage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{p.caption}</p>
                     <p className="truncate text-xs text-muted-foreground">{p.media_url}</p>
+                    {p.comment && (
+                      <p className="mt-1 truncate text-xs">
+                        <span className="text-muted-foreground">Comment: </span>
+                        <span className={p.comment_posted ? "text-green-600" : p.status === "posted" ? "text-red-600" : "text-muted-foreground"}>
+                          {p.comment}
+                          {p.status === "posted" && (p.comment_posted ? " ✓" : " (failed to post)")}
+                        </span>
+                      </p>
+                    )}
                   </div>
                   <span className={`ml-4 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                     p.status === "posted" ? "bg-green-100 text-green-700" :
