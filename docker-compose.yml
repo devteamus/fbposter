@@ -23,8 +23,21 @@ services:
     image: fb-autoposter:latest
     container_name: fb-autoposter-app
     restart: unless-stopped
-    ports:
-      - "${PORT:-5000}:5000"
+    # NOTE on ports: no host port binding here on purpose. Coolify's own
+    # Traefik reverse proxy talks to this container over Docker's internal
+    # network using the exposed port below — it does NOT need (and
+    # shouldn't use) a host port. This means it can never collide with any
+    # other app/port already running on the VPS.
+    #
+    # If you're running this WITHOUT Coolify (e.g. plain `docker compose up`
+    # on your own machine, like the WSL local testing you've been doing),
+    # uncomment the two lines below so you can still reach it at
+    # http://localhost:5000 — pick a different host port via PORT= if 5000
+    # is already taken locally.
+    # ports:
+    #   - "${PORT:-5000}:5000"
+    expose:
+      - "5000"
     environment:
       - PORT=5000
       - FLASK_ENV=${FLASK_ENV:-production}
