@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fb-autoposter-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fb_autoposter
+      POSTGRES_USER: fbuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fbpass_change_me_2026}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fbuser -d fb_autoposter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - fb-net
+
+  app:
+    build: .
+    image: fb-autoposter:latest
+    container_name: fb-autoposter-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      - PORT=5000
+      - FLASK_ENV=${FLASK_ENV:-production}
+      # REQUIRED before real deployment: generate real random values, e.g.
+      #   openssl rand -hex 32
+      # and put them in a .env file next to this compose file (never commit
+      # .env). The app refuses to start with the placeholder defaults below
+      # unless FLASK_ENV=development.
+      - SECRET_KEY=${SECRET_KEY:-super-secret-change-me-2026}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-jwt-secret-change-me-2026}
+      - DATABASE_URL=postgresql://fbuser:${POSTGRES_PASSWORD:-fbpass_change_me_2026}@postgres:5432/fb_autoposter
+      - WORKER_TICK_SECONDS=${WORKER_TICK_SECONDS:-30}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      - CSV_RETENTION_HOURS=${CSV_RETENTION_HOURS:-24}
+      - JOB_RETENTION_DAYS=${JOB_RETENTION_DAYS:-15}
+      - MAX_CSV_ROWS=${MAX_CSV_ROWS:-5000}
+      # Comma-separated exact origins once the domain is live, e.g.
+      #   CORS_ORIGINS=https://fb.postgo.fun
+      # Leave as * only for local testing — the app automatically disables
+      # cookie/credentialed CORS when this is *, per browser security rules.
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - fb-uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/api/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    networks:
+      - fb-net
+
+volumes:
+  pg-data:
+  fb-uploads:
+
+networks:
+  fb-net:
+    driver: bridge
