@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { Facebook, Loader2 } from "lucide-react";
 
@@ -117,16 +118,27 @@ export default function LoginPage() {
           )}
         </p>
 
-        <footer className="pt-4 text-center text-xs text-muted-foreground">
-          Developed by{" "}
-          <a
-            href="https://www.linkedin.com/in/ifaisalh/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium underline underline-offset-2 hover:text-foreground"
-          >
-            Md Faisal Hossain
-          </a>
+        <footer className="space-y-2 pt-4 text-center text-xs text-muted-foreground">
+          <p className="space-x-3">
+            <Link href="/privacy-policy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            <span>·</span>
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Service
+            </Link>
+          </p>
+          <p>
+            Developed by{" "}
+            <a
+              href="https://www.linkedin.com/in/ifaisalh/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium underline underline-offset-2 hover:text-foreground"
+            >
+              Md Faisal Hossain
+            </a>
+          </p>
         </footer>
       </div>
     </div>
