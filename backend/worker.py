@@ -27,16 +27,16 @@ class FacebookPoster:
         self.base_url = f"https://graph.facebook.com/{api_version}"
         self.session = requests.Session()
 
-    def _request(self, method: str, endpoint: str, data: dict = None, params: dict = None):
+    def _request(self, method: str, endpoint: str, data: dict = None, params: dict = None, timeout: int = None):
         url = f"{self.base_url}/{endpoint}"
         req_params = {"access_token": self.access_token}
         if params:
             req_params.update(params)
         try:
             if method.upper() == "GET":
-                resp = self.session.get(url, params=req_params, timeout=30)
+                resp = self.session.get(url, params=req_params, timeout=timeout or 30)
             else:
-                resp = self.session.post(url, data=data, params=req_params, timeout=120)
+                resp = self.session.post(url, data=data, params=req_params, timeout=timeout or 120)
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.HTTPError as e:
@@ -75,24 +75,28 @@ class FacebookPoster:
         })
 
     def post_video(self, caption: str, video_url: str):
-        """Reliably publish a video to the Page's Timeline.
+        """Publish a video to the Page's Timeline.
 
-        Same reasoning as post_image() above: upload the video unpublished
-        first, then attach it to a proper /feed Timeline post so it's
-        guaranteed to show up as a feed story, not just under the Page's
-        Videos tab.
+        Unlike photos, Facebook's /feed endpoint with attached_media only
+        accepts photo IDs — it does NOT accept video IDs.  The correct way
+        to create a video Timeline story is to upload directly to
+        /{page}/videos with published=true and description=<caption>,
+        which automatically creates a proper feed story (visible on the
+        Timeline, not just buried in the Videos tab).
+
+        Facebook fetches the file from file_url synchronously — this call
+        doesn't return until Facebook finishes downloading + validating
+        the video, which for a real video file (tens/hundreds of MB) can
+        take several minutes depending on how fast our hosting serves it.
+        A short timeout here doesn't fail cleanly, it just times out the
+        HTTP request client-side while Facebook keeps working server-side
+        — so the post looks "stuck" on retry after retry.
         """
-        uploaded = self._request("POST", f"{self.page_id}/videos", data={
-            "file_url": video_url, "published": "false",
-        })
-        video_id = uploaded.get("id")
-        if not video_id:
-            raise FacebookAPIError("Video upload did not return an id")
-        return self._request("POST", f"{self.page_id}/feed", data={
-            "message": caption,
-            "attached_media[0]": f'{{"media_fbid":"{video_id}"}}',
+        return self._request("POST", f"{self.page_id}/videos", data={
+            "file_url": video_url,
+            "description": caption,
             "published": "true",
-        })
+        }, timeout=480)
 
     def post_text(self, caption: str):
         """Plain text status update — no media at all."""
@@ -107,10 +111,10 @@ class FacebookPoster:
         regular /videos upload NEVER appears in Reels no matter what, so
         this uses Meta's dedicated Reels upload flow:
           1) start an upload session (get a video_id + upload_url)
-          2) tell that upload_url to fetch our hosted file via a
-             `file_url` header (no need to download/re-upload bytes
-             ourselves — Facebook's servers pull directly from our URL,
-             same as the other endpoints)
+          2) download the video from our hosting URL, then POST the
+             raw binary bytes to the upload_url (rupload.facebook.com
+             does NOT support file_url — it strictly requires binary
+             data with offset + file_size headers)
           3) finish the session with video_state=PUBLISHED to actually
              publish it as a Reel
 
@@ -125,15 +129,33 @@ class FacebookPoster:
             raise FacebookAPIError("Could not start Reels upload session")
 
         try:
+            # Step 2a: Download the video from our hosting URL.
+            # Reels are typically short (15-90 s) so the file is manageable
+            # in memory.  For very large files you'd want chunked streaming,
+            # but Meta's rupload endpoint expects the whole blob in one POST.
+            logger.info("Reel #%s: downloading video from %s", video_id, video_url)
+            video_resp = self.session.get(video_url, timeout=300, stream=False)
+            video_resp.raise_for_status()
+            video_data = video_resp.content
+            file_size = len(video_data)
+            logger.info("Reel #%s: downloaded %d bytes, uploading to rupload…", video_id, file_size)
+
+            # Step 2b: Upload raw binary to Facebook's rupload endpoint.
+            # Required headers: Authorization, offset, file_size.
+            # Content-Type must be application/octet-stream (raw bytes).
             resp = self.session.post(
                 upload_url,
+                data=video_data,
                 headers={
                     "Authorization": f"OAuth {self.access_token}",
-                    "file_url": video_url,
+                    "Content-Type": "application/octet-stream",
+                    "offset": "0",
+                    "file_size": str(file_size),
                 },
-                timeout=180,
+                timeout=480,
             )
             resp.raise_for_status()
+            logger.info("Reel #%s: rupload complete, finishing…", video_id)
         except requests.exceptions.RequestException as e:
             raise FacebookAPIError(f"Reel upload failed: {e}")
 
@@ -142,7 +164,7 @@ class FacebookPoster:
             "video_id": video_id,
             "video_state": "PUBLISHED",
             "description": caption,
-        })
+        }, timeout=60)
         # The finish call doesn't reliably echo the video_id back, but we
         # already have it — normalize so callers (and post_comment) can
         # always read result["id"] the same way as the other post_* methods.
