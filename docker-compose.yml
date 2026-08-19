@@ -15,8 +15,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks:
-      - fb-net
 
   app:
     build: .
@@ -71,13 +69,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 45s
-    networks:
-      - fb-net
 
 volumes:
   pg-data:
   fb-uploads:
-
-networks:
-  fb-net:
-    driver: bridge
